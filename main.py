@@ -5,12 +5,20 @@ from requests.auth import HTTPBasicAuth
 import re
 from datetime import datetime, date
 import io
+import calendar
 from PIL import Image
 
 ODATA_URL = st.secrets["odatas"]["ODATA_URL"]
 
 SAP_USER = st.secrets["sap_logon"]["SAP_USER"]
 SAP_PASS = st.secrets["sap_logon"]["SAP_PASS"]
+
+def formatar_data_sap(date_str):
+    match = re.search(r'/Date\((\d+)\)/', date_str)
+    if match:
+        timestamp = int(match.group(1)) // 1000
+        return datetime.utcfromtimestamp(timestamp).strftime("%d/%m/%Y")
+    return date_str
 
 st.set_page_config(page_title="Relatorio Fornecedor", layout="wide")
 
@@ -20,17 +28,38 @@ with col1:
     st.image(logo, width=70)
 
 with col2:
-    st.title(" Relatório de Fornecedores - 0.1 ")
+    st.title(" Relatório de Fornecedores - 0.3 ")
+
+if "data_ini" not in st.session_state:
+    st.session_state["data_ini"] = date.today().replace(day=1)
+if "data_fim" not in st.session_state:
+    st.session_state["data_fim"] = date.today().replace()
 
 with st.sidebar:
     st.header(" 🔍 Filtros ")
-    tipo_filtro = st.selectbox("Filtrar por:", ["Número da Fazenda", "Nome do Fornecedor"])
-    valor_filtro = st.text_input("Digite o valor:", "")
 
-    if st.button("Salvar Filtros"):
-        st.session_state["tipo_filtro"] = tipo_filtro
-        st.session_state["valor_filtro"] = valor_filtro
-        st.success("Filtros salvos! ")
+    # Escolha do mês e ano
+    mes = st.selectbox("Selecione o mês:", list(range(1, 13)), format_func=lambda x: calendar.month_name[x])
+    ano = st.number_input("Ano:", min_value=2020, max_value=2099, value=2025, step=1)
+    
+    # Calcula primeiro e último dia do mês selecionado
+    primeiro_dia = date(ano, mes, 1)
+    ultimo_dia = date(ano, mes, calendar.monthrange(ano, mes)[1])
+
+    
+    # Safra estática por enquanto
+    periodo = "2025/2026"
+    filtro_tipo = st.selectbox("Filtrar por:", ["Chave (Fazenda)", "Contrato (EBELN)"])
+
+    if filtro_tipo == "Chave (Fazenda)":
+        filtro_valor = st.text_input("Digite a Chave (ex: FTU100360000):", "")
+        header_filtro = {"chave": filtro_valor}
+    else:
+        filtro_valor = st.text_input("Digite o Contrato (ex: 4600012345):", "")
+        header_filtro = {"contrato": filtro_valor}
+
+    st.caption(f"📅 Período calculado: {primeiro_dia.strftime('%d/%m/%Y')} até {ultimo_dia.strftime('%d/%m/%Y')}")
+
 
 st.subheader("📊 Resultado da Consulta")
 
@@ -38,7 +67,10 @@ if st.button("Consultar SAP"):
     with st.spinner("🔄 Consultando SAP ..."):
         try:
             headers = {
-               "Accept": "application/json", 
+               "Accept": "application/json",
+               "periodo": periodo,
+               "data_ini": primeiro_dia.strftime("%Y%m%d"),
+               "data_fim": ultimo_dia.strftime("%Y%m%d"),
                "x-csrf-token": "fetch"
             }
 
